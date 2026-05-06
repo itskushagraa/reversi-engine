@@ -45,3 +45,7 @@ the default ai depth is 7.
 the web version uses the same rust engine through a small local http server. it also has side selection, depth selection, and move history viewing.
 
 there are no external rust crates.
+
+## license
+
+mit.

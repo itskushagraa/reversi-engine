@@ -29,9 +29,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
+    renderLucideIcons();
   });
 
   useEffect(() => {
@@ -395,13 +393,14 @@ function SiteFooter() {
           rel: "noreferrer",
           className: "footer-link github-link",
         },
-        h("i", { "data-lucide": "github", "aria-hidden": "true" }),
+        h("i", { className: "footer-icon", "data-lucide": "github", "aria-hidden": "true" }),
         h("span", null, "read the source")
       ),
       h(
         "span",
         { className: "footer-copy" },
-        "copyright 2026 ",
+        h("i", { className: "footer-icon", "data-lucide": "copyright", "aria-hidden": "true" }),
+        "2026 ",
         h("strong", null, "Kushagra Sharma")
       ),
       h(
@@ -412,11 +411,21 @@ function SiteFooter() {
           rel: "noreferrer",
           className: "footer-link site-link",
         },
-        h("i", { "data-lucide": "sparkles", "aria-hidden": "true" }),
+        h("i", { className: "footer-icon", "data-lucide": "sparkles", "aria-hidden": "true" }),
         h("span", null, "see what else i build")
       )
     ),
   );
+}
+
+function renderLucideIcons() {
+  if (window.lucide) {
+    window.lucide.createIcons({
+      attrs: {
+        "stroke-width": 2.2,
+      },
+    });
+  }
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(h(App));

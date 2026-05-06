@@ -893,10 +893,13 @@ button:disabled {
   color: var(--cyan);
 }
 
-.footer-link svg {
+.footer-icon,
+.footer-link svg,
+.footer-copy svg {
   width: 16px;
   height: 16px;
   stroke-width: 2.2;
+  flex: 0 0 auto;
 }
 
 @keyframes floatAmbient {
