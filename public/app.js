@@ -29,6 +29,12 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  });
+
+  useEffect(() => {
     function onKeyDown(event) {
       if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -129,46 +135,51 @@ function App() {
     : "Loading";
 
   return h(
-    "main",
-    { className: `shell ${busy ? "is-thinking" : ""} ${newGamePulse ? "new-game-pulse" : ""}` },
-    h("div", { className: "ambient ambient-one" }),
-    h("div", { className: "ambient ambient-two" }),
-    h("div", { className: "ambient ambient-three" }),
+    React.Fragment,
+    null,
     h(
-      "section",
-      { className: "play-area" },
+      "main",
+      { className: `shell ${busy ? "is-thinking" : ""} ${newGamePulse ? "new-game-pulse" : ""}` },
+      h("div", { className: "ambient ambient-one" }),
+      h("div", { className: "ambient ambient-two" }),
+      h("div", { className: "ambient ambient-three" }),
       h(
-        "header",
-        { className: "topbar" },
+        "section",
+        { className: "play-area" },
         h(
-          "div",
-          { className: "brand-block" },
-          h("h1", null, h("span", null, "Reversi"), " Engine"),
-          h("p", null, status)
-        ),
-        h(
-          "div",
-          { className: "controls" },
-          h(SidePicker, { humanPlayer, busy, onPick: chooseSide }),
-          h(DepthPicker, {
-            depth,
-            busy,
-            open: depthOpen,
-            setOpen: setDepthOpen,
-            onPick: (value) => setDepth(value),
-          }),
+          "header",
+          { className: "topbar" },
           h(
-            "button",
-            { type: "button", className: "new-game-button", disabled: busy, onClick: () => newGame(depth, humanPlayer) },
-            h("span", null, "New game")
+            "div",
+            { className: "brand-block" },
+            h("h1", null, h("span", null, "Reversi"), " Engine"),
+            h("p", null, status)
+          ),
+          h(
+            "div",
+            { className: "controls" },
+            h(SidePicker, { humanPlayer, busy, onPick: chooseSide }),
+            h(DepthPicker, {
+              depth,
+              busy,
+              open: depthOpen,
+              setOpen: setDepthOpen,
+              onPick: (value) => setDepth(value),
+            }),
+            h(
+              "button",
+              { type: "button", className: "new-game-button", disabled: busy, onClick: () => newGame(depth, humanPlayer) },
+              h("span", null, "New game")
+            )
           )
-        )
+        ),
+        h(BoardView, { game, legalSet, canPlay, onMove: playMove }),
+        h(HistoryNav, { canGoBack, canGoForward, cursor, total: history.length, setCursor }),
+        busy && h(ThinkingDock, null)
       ),
-      h(BoardView, { game, legalSet, canPlay, onMove: playMove }),
-      h(HistoryNav, { canGoBack, canGoForward, cursor, total: history.length, setCursor }),
-      busy && h(ThinkingDock, null)
+      h(Sidebar, { game, liveGame, busy, error, isViewingPast, humanPlayer })
     ),
-    h(Sidebar, { game, liveGame, busy, error, isViewingPast, humanPlayer })
+    h(SiteFooter, null)
   );
 }
 
@@ -365,6 +376,39 @@ function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer }) {
       messages.length
         ? messages.map((message, index) => h("li", { key: `${index}-${message}` }, message))
         : h("li", null, "Select a highlighted square when it is your turn.")
+    )
+  );
+}
+
+function SiteFooter() {
+  return h(
+    "footer",
+    { className: "site-footer" },
+    h(
+      "a",
+      {
+        href: "https://github.com/itskushagraa/reversi-engine",
+        target: "_blank",
+        rel: "noreferrer",
+        className: "footer-link github-link",
+      },
+      h("i", { "data-lucide": "github", "aria-hidden": "true" }),
+      "github"
+    ),
+    h(
+      "span",
+      null,
+      "copyright 2026 ",
+      h(
+        "a",
+        {
+          href: "https://kush-sharma.com",
+          target: "_blank",
+          rel: "noreferrer",
+          className: "footer-link",
+        },
+        "Kushagra Sharma"
+      )
     )
   );
 }
