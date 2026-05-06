@@ -3,9 +3,14 @@ const { createElement: h, useEffect, useMemo, useState } = React;
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const DEPTHS = [3, 5, 7, 9, 11];
 const SIDES = ["Black", "White"];
+const TURN_FRAME_DELAY_MS = 650;
 
 function coordFor(index) {
   return `${FILES[index % 8]}${Math.floor(index / 8) + 1}`;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function App() {
@@ -70,8 +75,7 @@ function App() {
     try {
       const response = await fetch(`/api/new?depth=${nextDepth}&human=${nextHumanPlayer}`);
       const data = await response.json();
-      setHistory([data]);
-      setCursor(0);
+      await showResponseFrames(data, { replace: true });
     } catch (err) {
       setError(`Could not start game: ${err.message}`);
     } finally {
@@ -103,15 +107,30 @@ function App() {
       if (!response.ok) {
         throw new Error(data.error || "Move failed");
       }
-      setHistory((items) => {
-        const next = items.slice(0, cursor + 1).concat(data);
-        setCursor(next.length - 1);
-        return next;
-      });
+      await showResponseFrames(data, { baseCursor: cursor });
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function showResponseFrames(data, { replace = false, baseCursor = cursor } = {}) {
+    const frames = Array.isArray(data.frames) && data.frames.length ? data.frames : [data];
+    const shown = [];
+
+    for (const frame of frames) {
+      if (shown.length > 0) {
+        await wait(TURN_FRAME_DELAY_MS);
+      }
+
+      shown.push(frame);
+      setHistory((items) => {
+        const base = replace ? [] : items.slice(0, baseCursor + 1);
+        const next = base.concat(shown);
+        setCursor(next.length - 1);
+        return next;
+      });
     }
   }
 

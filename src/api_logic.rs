@@ -24,8 +24,8 @@ pub struct MoveInput {
 
 /// Creates a new game response as a json string.
 pub fn new_game_json(depth: u32, human_player: Player) -> String {
-    let (board, messages) = advance_ai_turns(Board::new(), depth, human_player);
-    board_json(&board, &messages, None, human_player)
+    let (board, messages, frames) = advance_ai_turns(Board::new(), depth, human_player, Vec::new());
+    board_json(&board, &messages, None, human_player, &frames)
 }
 
 /// Applies a human move and returns the updated game response as a json string.
@@ -37,6 +37,7 @@ pub fn move_json(input: MoveInput) -> Result<String, String> {
             &["The game is already over.".to_string()],
             None,
             input.human_player,
+            &[],
         ));
     }
     if board.current_player() != input.human_player {
@@ -53,16 +54,23 @@ pub fn move_json(input: MoveInput) -> Result<String, String> {
         ));
     }
 
-    let mut messages = vec![format!("You played {}.", coord_from_bit(square))];
+    let human_move = coord_from_bit(square);
+    let messages = vec![format!("You played {human_move}.")];
     let board = board.apply_move(square);
-    let (board, mut ai_messages) = advance_ai_turns(board, input.depth, input.human_player);
-    messages.append(&mut ai_messages);
+    let mut frames = vec![BoardFrame {
+        board,
+        messages: messages.clone(),
+    }];
+    let (board, messages, mut ai_frames) =
+        advance_ai_turns(board, input.depth, input.human_player, messages);
+    frames.append(&mut ai_frames);
 
     Ok(board_json(
         &board,
         &messages,
-        Some(coord_from_bit(square)),
+        Some(human_move),
         input.human_player,
+        &frames,
     ))
 }
 
@@ -75,8 +83,19 @@ pub fn parse_player(value: &str) -> Option<Player> {
     }
 }
 
-fn advance_ai_turns(mut board: Board, depth: u32, human_player: Player) -> (Board, Vec<String>) {
-    let mut messages = Vec::new();
+#[derive(Debug, Clone)]
+struct BoardFrame {
+    board: Board,
+    messages: Vec<String>,
+}
+
+fn advance_ai_turns(
+    mut board: Board,
+    depth: u32,
+    human_player: Player,
+    mut messages: Vec<String>,
+) -> (Board, Vec<String>, Vec<BoardFrame>) {
+    let mut frames = Vec::new();
 
     while !board.game_over() {
         let legal_moves = board.legal_moves_list();
@@ -85,6 +104,10 @@ fn advance_ai_turns(mut board: Board, depth: u32, human_player: Player) -> (Boar
             if legal_moves.is_empty() {
                 messages.push(format!("{} has no legal moves and passes.", human_player));
                 board = board.pass();
+                frames.push(BoardFrame {
+                    board,
+                    messages: messages.clone(),
+                });
             } else {
                 break;
             }
@@ -94,11 +117,19 @@ fn advance_ai_turns(mut board: Board, depth: u32, human_player: Player) -> (Boar
                 board.current_player()
             ));
             board = board.pass();
+            frames.push(BoardFrame {
+                board,
+                messages: messages.clone(),
+            });
         } else {
             match engine::best_move(&board, depth) {
                 Some(square) => {
                     messages.push(format!("AI played {}.", coord_from_bit(square)));
                     board = board.apply_move(square);
+                    frames.push(BoardFrame {
+                        board,
+                        messages: messages.clone(),
+                    });
                 }
                 None => {
                     messages.push(format!(
@@ -106,6 +137,10 @@ fn advance_ai_turns(mut board: Board, depth: u32, human_player: Player) -> (Boar
                         board.current_player()
                     ));
                     board = board.pass();
+                    frames.push(BoardFrame {
+                        board,
+                        messages: messages.clone(),
+                    });
                 }
             }
         }
@@ -123,15 +158,53 @@ fn advance_ai_turns(mut board: Board, depth: u32, human_player: Player) -> (Boar
         messages.push(format!(
             "Game over. Final score: Black {black}, White {white}. {outcome}"
         ));
+        if let Some(frame) = frames.last_mut() {
+            frame.messages = messages.clone();
+        } else {
+            frames.push(BoardFrame {
+                board,
+                messages: messages.clone(),
+            });
+        }
     }
 
-    (board, messages)
+    (board, messages, frames)
 }
 
 fn board_json(
     board: &Board,
     messages: &[String],
     human_move: Option<String>,
+    human_player: Player,
+    frames: &[BoardFrame],
+) -> String {
+    let frames_json = frames
+        .iter()
+        .map(|frame| {
+            format!(
+                "{{{}}}",
+                state_json(
+                    &frame.board,
+                    &frame.messages,
+                    human_move.as_deref(),
+                    human_player
+                )
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    format!(
+        concat!("{{", "{},", "\"frames\":[{}]", "}}"),
+        state_json(board, messages, human_move.as_deref(), human_player),
+        frames_json
+    )
+}
+
+fn state_json(
+    board: &Board,
+    messages: &[String],
+    human_move: Option<&str>,
     human_player: Player,
 ) -> String {
     let (black_score, white_score) = board.score();
@@ -171,12 +244,11 @@ fn board_json(
         "\"Draw\"".to_string()
     };
     let last_human_move = human_move
-        .map(|coord| format!("\"{}\"", escape_json(&coord)))
+        .map(|coord| format!("\"{}\"", escape_json(coord)))
         .unwrap_or_else(|| "null".to_string());
 
     format!(
         concat!(
-            "{{",
             "\"black\":\"{}\",",
             "\"white\":\"{}\",",
             "\"currentPlayer\":\"{}\",",
@@ -188,7 +260,6 @@ fn board_json(
             "\"winner\":{},",
             "\"messages\":[{}],",
             "\"lastHumanMove\":{}",
-            "}}"
         ),
         board.black,
         board.white,
