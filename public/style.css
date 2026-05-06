@@ -844,41 +844,56 @@ button:disabled {
 .site-footer {
   position: relative;
   z-index: 1;
-  width: min(1120px, calc(100vw - 32px));
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px 16px;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  background:
+    linear-gradient(90deg, transparent, rgb(130 240 187 / 7%), transparent),
+    rgb(4 11 10 / 62%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+  backdrop-filter: blur(16px);
+}
+
+.footer-inner {
+  width: min(1120px, 100%);
   margin: 0 auto;
-  padding: 8px 0 18px;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   color: rgb(247 243 232 / 58%);
   font-size: 13px;
   font-weight: 750;
 }
 
-.site-footer span {
+.footer-copy {
   display: inline-flex;
   gap: 4px;
   align-items: center;
+  color: rgb(247 243 232 / 58%);
+  text-align: center;
+}
+
+.footer-copy strong {
+  color: rgb(247 243 232 / 76%);
 }
 
 .footer-link {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
   color: var(--mint);
   text-decoration: none;
   text-shadow: 0 0 14px rgb(130 240 187 / 22%);
+  white-space: nowrap;
 }
 
 .footer-link:hover {
   color: var(--cyan);
 }
 
-.github-link {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.github-link svg {
+.footer-link svg {
   width: 16px;
   height: 16px;
   stroke-width: 2.2;
@@ -1118,9 +1133,13 @@ button:disabled {
   }
 
   .site-footer {
-    width: min(100vw - 20px, 760px);
+    padding: 12px 10px 14px;
+  }
+
+  .footer-inner {
+    justify-content: center;
     flex-wrap: wrap;
-    padding-bottom: 14px;
+    gap: 9px 14px;
   }
 }
 

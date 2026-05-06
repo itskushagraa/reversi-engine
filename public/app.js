@@ -385,31 +385,37 @@ function SiteFooter() {
     "footer",
     { className: "site-footer" },
     h(
-      "a",
-      {
-        href: "https://github.com/itskushagraa/reversi-engine",
-        target: "_blank",
-        rel: "noreferrer",
-        className: "footer-link github-link",
-      },
-      h("i", { "data-lucide": "github", "aria-hidden": "true" }),
-      "github"
-    ),
-    h(
-      "span",
-      null,
-      "copyright 2026 ",
+      "div",
+      { className: "footer-inner" },
+      h(
+        "a",
+        {
+          href: "https://github.com/itskushagraa/reversi-engine",
+          target: "_blank",
+          rel: "noreferrer",
+          className: "footer-link github-link",
+        },
+        h("i", { "data-lucide": "github", "aria-hidden": "true" }),
+        h("span", null, "read the source")
+      ),
+      h(
+        "span",
+        { className: "footer-copy" },
+        "copyright 2026 ",
+        h("strong", null, "Kushagra Sharma")
+      ),
       h(
         "a",
         {
           href: "https://kush-sharma.com",
           target: "_blank",
           rel: "noreferrer",
-          className: "footer-link",
+          className: "footer-link site-link",
         },
-        "Kushagra Sharma"
+        h("i", { "data-lucide": "sparkles", "aria-hidden": "true" }),
+        h("span", null, "see what else i build")
       )
-    )
+    ),
   );
 }
 
