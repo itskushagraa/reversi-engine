@@ -2,6 +2,7 @@
 
 use crate::board::{bit_from_coord, coord_from_bit, Board, Cell, Player};
 use crate::engine;
+use crate::eval::eval_for_display;
 
 /// Default AI search depth used by the web front ends.
 pub const DEFAULT_DEPTH: u32 = 7;
@@ -207,6 +208,7 @@ fn state_json(
     human_move: Option<&str>,
     human_player: Player,
 ) -> String {
+    let eval_score = eval_for_display(board);
     let (black_score, white_score) = board.score();
     let legal_moves = board
         .legal_moves_list()
@@ -259,7 +261,8 @@ fn state_json(
             "\"gameOver\":{},",
             "\"winner\":{},",
             "\"messages\":[{}],",
-            "\"lastHumanMove\":{}",
+            "\"lastHumanMove\":{},",
+            "\"eval\":{:.2}",
         ),
         board.black,
         board.white,
@@ -272,7 +275,8 @@ fn state_json(
         board.game_over(),
         winner,
         messages_json,
-        last_human_move
+        last_human_move,
+        eval_score,
     )
 }
 

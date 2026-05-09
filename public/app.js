@@ -263,52 +263,94 @@ function DepthPicker({ depth, busy, open, setOpen, onPick }) {
   );
 }
 
-function BoardView({ game, legalSet, canPlay, onMove }) {
-  const cells = game?.cells ?? Array(64).fill("empty");
+function EvalBar({ evalScore }) {
+  const clamped = Math.max(-10, Math.min(10, evalScore ?? 0));
+  // Chess convention: positive = White winning, negative = Black winning.
+  // Black fills top of bar — more black fill = Black is winning (clamped is more negative).
+  const blackPct = ((10 - clamped) / 20) * 100;
+  const display =
+    Math.abs(clamped) < 0.05
+      ? "0.0"
+      : clamped > 0
+        ? `+${clamped.toFixed(1)}`
+        : clamped.toFixed(1);
+  const evalState = clamped < -1.5 ? "black" : clamped > 1.5 ? "white" : "equal";
 
   return h(
     "div",
-    { className: "board-wrap" },
+    {
+      className: "eval-bar-outer",
+      style: { "--eval-black-pct": `${blackPct.toFixed(2)}%` },
+      "data-eval": evalState,
+      role: "meter",
+      "aria-label": `Position evaluation: ${display}`,
+      "aria-valuenow": clamped.toFixed(1),
+      "aria-valuemin": "-10",
+      "aria-valuemax": "10",
+    },
     h(
       "div",
-      { className: "files files-top" },
-      FILES.map((file) => h("span", { key: file }, file))
+      { className: "eval-bar-track" },
+      h("div", { className: "eval-bar-black" }),
+      h("div", { className: "eval-bar-white" })
     ),
+    h("div", { className: "eval-bar-separator" }),
+    h("div", { className: "eval-bar-label" }, display)
+  );
+}
+
+function BoardView({ game, legalSet, canPlay, onMove }) {
+  const cells = game?.cells ?? Array(64).fill("empty");
+  const evalScore = game?.eval ?? 0;
+
+  return h(
+    "div",
+    { className: "board-outer" },
+    h(EvalBar, { evalScore }),
     h(
       "div",
-      { className: "board-row-layout" },
-      h("div", { className: "ranks" }, Array.from({ length: 8 }, (_, index) => h("span", { key: index }, index + 1))),
+      { className: "board-wrap" },
       h(
         "div",
-        { className: "board", "aria-label": "Reversi board" },
-        cells.map((cell, index) => {
-          const coord = coordFor(index);
-          const legal = canPlay && legalSet.has(coord);
-          const className = ["square", legal ? "legal" : "", game?.lastHumanMove === coord ? "last" : ""]
-            .filter(Boolean)
-            .join(" ");
-
-          return h(
-            "button",
-            {
-              key: coord,
-              type: "button",
-              className,
-              disabled: !legal || game?.gameOver,
-              onClick: () => onMove(coord),
-              title: legal ? `Play ${coord}` : coord,
-            },
-            cell !== "empty" && h("span", { className: `disc ${cell}` }),
-            legal && h("span", { className: "legal-orbit" })
-          );
-        })
+        { className: "files files-top" },
+        FILES.map((file) => h("span", { key: file }, file))
       ),
-      h("div", { className: "ranks" }, Array.from({ length: 8 }, (_, index) => h("span", { key: index }, index + 1)))
-    ),
-    h(
-      "div",
-      { className: "files files-bottom" },
-      FILES.map((file) => h("span", { key: file }, file))
+      h(
+        "div",
+        { className: "board-row-layout" },
+        h("div", { className: "ranks" }, Array.from({ length: 8 }, (_, index) => h("span", { key: index }, index + 1))),
+        h(
+          "div",
+          { className: "board", "aria-label": "Reversi board" },
+          cells.map((cell, index) => {
+            const coord = coordFor(index);
+            const legal = canPlay && legalSet.has(coord);
+            const className = ["square", legal ? "legal" : "", game?.lastHumanMove === coord ? "last" : ""]
+              .filter(Boolean)
+              .join(" ");
+
+            return h(
+              "button",
+              {
+                key: coord,
+                type: "button",
+                className,
+                disabled: !legal || game?.gameOver,
+                onClick: () => onMove(coord),
+                title: legal ? `Play ${coord}` : coord,
+              },
+              cell !== "empty" && h("span", { className: `disc ${cell}` }),
+              legal && h("span", { className: "legal-orbit" })
+            );
+          })
+        ),
+        h("div", { className: "ranks" }, Array.from({ length: 8 }, (_, index) => h("span", { key: index }, index + 1)))
+      ),
+      h(
+        "div",
+        { className: "files files-bottom" },
+        FILES.map((file) => h("span", { key: file }, file))
+      )
     )
   );
 }

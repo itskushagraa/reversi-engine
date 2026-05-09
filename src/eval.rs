@@ -11,6 +11,23 @@ const CORNER_ADJACENT: [[u64; 3]; 4] = [
     [1_u64 << 54, 1_u64 << 55, 1_u64 << 62],
 ];
 
+/// Evaluates the board using chess convention: positive = White winning, negative = Black winning.
+/// Normalized to −10.0 … +10.0. Terminal positions are mapped via disc-count difference.
+pub fn eval_for_display(board: &Board) -> f32 {
+    if board.game_over() {
+        let (black, white) = board.score();
+        let diff = white as i32 - black as i32; // positive = White wins
+        return (diff as f32 / 6.4).clamp(-10.0, 10.0);
+    }
+
+    let raw = evaluate(board);
+    let from_white = match board.current_player() {
+        Player::White => raw,
+        Player::Black => -raw,
+    };
+    (from_white as f32 / 40.0).clamp(-10.0, 10.0)
+}
+
 /// Evaluates the board from the current player's perspective.
 pub fn evaluate(board: &Board) -> i32 {
     if board.game_over() {
