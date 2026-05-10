@@ -280,6 +280,103 @@ fn state_json(
     )
 }
 
+/// Input payload for position analysis.
+pub struct AnalyzeInput {
+    pub black: u64,
+    pub white: u64,
+    pub current_player: Player,
+    pub depth: u32,
+}
+
+/// Analyzes a board position and returns eval, legal moves, and AI best-move suggestion.
+pub fn analyze_json(input: AnalyzeInput) -> String {
+    let board = Board::from_parts(input.black, input.white, input.current_player);
+    let eval_score = eval_for_display(&board);
+    let (black_score, white_score) = board.score();
+    let legal_moves = board.legal_moves_list();
+
+    let cells = (0..64)
+        .map(|index| {
+            let square = 1_u64 << index;
+            match board.get_cell(square) {
+                Cell::Empty => "\"empty\"",
+                Cell::Black => "\"black\"",
+                Cell::White => "\"white\"",
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let legal_json = legal_moves
+        .iter()
+        .map(|&sq| format!("\"{}\"", escape_json(&coord_from_bit(sq))))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let winner = if !board.game_over() {
+        "null".to_string()
+    } else if black_score > white_score {
+        "\"Black\"".to_string()
+    } else if white_score > black_score {
+        "\"White\"".to_string()
+    } else {
+        "\"Draw\"".to_string()
+    };
+
+    let ai_move = if !board.game_over() && !legal_moves.is_empty() {
+        engine::best_move(&board, input.depth)
+            .map(|sq| format!("\"{}\"", escape_json(&coord_from_bit(sq))))
+            .unwrap_or_else(|| "null".to_string())
+    } else {
+        "null".to_string()
+    };
+
+    format!(
+        concat!(
+            "{{",
+            "\"black\":\"{}\",",
+            "\"white\":\"{}\",",
+            "\"currentPlayer\":\"{}\",",
+            "\"cells\":[{}],",
+            "\"legalMoves\":[{}],",
+            "\"score\":{{\"black\":{},\"white\":{}}},",
+            "\"gameOver\":{},",
+            "\"winner\":{},",
+            "\"eval\":{:.2},",
+            "\"aiMove\":{}",
+            "}}",
+        ),
+        board.black,
+        board.white,
+        board.current_player(),
+        cells,
+        legal_json,
+        black_score,
+        white_score,
+        board.game_over(),
+        winner,
+        eval_score,
+        ai_move,
+    )
+}
+
+/// Input payload for starting a game from a custom position.
+pub struct StartFromPositionInput {
+    pub black: u64,
+    pub white: u64,
+    pub current_player: Player,
+    pub human_player: Player,
+    pub depth: u32,
+}
+
+/// Starts a game from a custom board position, letting the AI move first if needed.
+pub fn start_from_position_json(input: StartFromPositionInput) -> String {
+    let board = Board::from_parts(input.black, input.white, input.current_player);
+    let (board, messages, frames) =
+        advance_ai_turns(board, input.depth, input.human_player, Vec::new());
+    board_json(&board, &messages, None, input.human_player, &frames)
+}
+
 fn escape_json(value: &str) -> String {
     value
         .chars()

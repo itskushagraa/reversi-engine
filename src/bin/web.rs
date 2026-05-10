@@ -3,7 +3,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use reversi_engine::api_logic::{self, MoveInput, DEFAULT_DEPTH};
+use reversi_engine::api_logic::{self, AnalyzeInput, MoveInput, StartFromPositionInput, DEFAULT_DEPTH};
 use reversi_engine::board::Player;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
@@ -97,6 +97,22 @@ fn handle_connection(stream: &mut TcpStream) {
                 &format!("{{\"error\":\"{}\"}}", escape_json(&message)),
             ),
         },
+        ("POST", "/api/analyze") => match handle_analyze(body) {
+            Ok(response) => write_json(stream, 200, &response),
+            Err(message) => write_json(
+                stream,
+                400,
+                &format!("{{\"error\":\"{}\"}}", escape_json(&message)),
+            ),
+        },
+        ("POST", "/api/start") => match handle_start(body) {
+            Ok(response) => write_json(stream, 200, &response),
+            Err(message) => write_json(
+                stream,
+                400,
+                &format!("{{\"error\":\"{}\"}}", escape_json(&message)),
+            ),
+        },
         _ => write_response(stream, 404, "text/plain", "Not found"),
     }
 }
@@ -134,6 +150,49 @@ fn handle_move(body: &str) -> Result<String, String> {
         move_coord,
         depth,
     })
+}
+
+fn handle_analyze(body: &str) -> Result<String, String> {
+    let black = json_field(body, "black")
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| "Missing or invalid black bitboard".to_string())?;
+    let white = json_field(body, "white")
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| "Missing or invalid white bitboard".to_string())?;
+    let current_player = json_field(body, "currentPlayer")
+        .and_then(|v| api_logic::parse_player(&v))
+        .ok_or_else(|| "Missing or invalid current player".to_string())?;
+    let depth = json_field(body, "depth")
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(DEFAULT_DEPTH);
+
+    Ok(api_logic::analyze_json(AnalyzeInput { black, white, current_player, depth }))
+}
+
+fn handle_start(body: &str) -> Result<String, String> {
+    let black = json_field(body, "black")
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| "Missing or invalid black bitboard".to_string())?;
+    let white = json_field(body, "white")
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| "Missing or invalid white bitboard".to_string())?;
+    let current_player = json_field(body, "currentPlayer")
+        .and_then(|v| api_logic::parse_player(&v))
+        .ok_or_else(|| "Missing or invalid current player".to_string())?;
+    let human_player = json_field(body, "humanPlayer")
+        .and_then(|v| api_logic::parse_player(&v))
+        .unwrap_or(reversi_engine::board::Player::Black);
+    let depth = json_field(body, "depth")
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(DEFAULT_DEPTH);
+
+    Ok(api_logic::start_from_position_json(StartFromPositionInput {
+        black,
+        white,
+        current_player,
+        human_player,
+        depth,
+    }))
 }
 
 fn query_field(path: &str, field: &str) -> Option<String> {

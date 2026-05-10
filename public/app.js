@@ -5,6 +5,24 @@ const DEPTHS = [3, 5, 7, 9, 11];
 const SIDES = ["Black", "White"];
 const TURN_FRAME_DELAY_MS = 650;
 
+// Standard Reversi starting position cell array (index = bit index in bitboard)
+const STANDARD_CELLS = (() => {
+  const c = Array(64).fill("empty");
+  c[27] = "white"; c[28] = "black"; c[35] = "black"; c[36] = "white";
+  return c;
+})();
+
+// Convert a 64-element cell array to {black, white} bitboard strings.
+// Uses BigInt to avoid JS precision loss on 64-bit integers.
+function cellsToBitboards(cells) {
+  let black = 0n, white = 0n;
+  for (let i = 0; i < 64; i++) {
+    if (cells[i] === "black") black |= 1n << BigInt(i);
+    else if (cells[i] === "white") white |= 1n << BigInt(i);
+  }
+  return { black: black.toString(), white: white.toString() };
+}
+
 function coordFor(index) {
   return `${FILES[index % 8]}${Math.floor(index / 8) + 1}`;
 }
@@ -14,14 +32,26 @@ function wait(ms) {
 }
 
 function App() {
+  // ── Shared state ────────────────────────────────────────────────────────────
+  const [appMode, setAppMode] = useState("play"); // "play" | "analyze"
   const [depth, setDepth] = useState(7);
   const [humanPlayer, setHumanPlayer] = useState("Black");
+  const [depthOpen, setDepthOpen] = useState(false);
+
+  // ── Play mode state ─────────────────────────────────────────────────────────
   const [history, setHistory] = useState([]);
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [depthOpen, setDepthOpen] = useState(false);
   const [newGamePulse, setNewGamePulse] = useState(false);
+
+  // ── Analyze mode state ──────────────────────────────────────────────────────
+  const [editorCells, setEditorCells] = useState(() => [...STANDARD_CELLS]);
+  const [editorTool, setEditorTool] = useState("black");
+  const [editorPlayer, setEditorPlayer] = useState("Black");
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState("");
 
   const game = history[cursor] ?? null;
   const liveGame = history[history.length - 1] ?? null;
@@ -139,6 +169,76 @@ function App() {
     newGame(depth, side);
   }
 
+  // ── Analyze mode handlers ─────────────────────────────────────────────────
+
+  function handleEditorCellClick(index) {
+    setEditorCells((prev) => {
+      const next = [...prev];
+      next[index] = editorTool === "erase" ? "empty" : editorTool;
+      return next;
+    });
+    setAnalysisResult(null);
+  }
+
+  function changeEditorPlayer(side) {
+    setEditorPlayer(side);
+    setAnalysisResult(null);
+  }
+
+  function clearBoard() {
+    setEditorCells(Array(64).fill("empty"));
+    setAnalysisResult(null);
+    setAnalyzeError("");
+  }
+
+  function resetToStart() {
+    setEditorCells([...STANDARD_CELLS]);
+    setAnalysisResult(null);
+    setAnalyzeError("");
+    setEditorPlayer("Black");
+  }
+
+  async function runAnalysis() {
+    setAnalysisBusy(true);
+    setAnalyzeError("");
+    const { black, white } = cellsToBitboards(editorCells);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ black, white, currentPlayer: editorPlayer, depth }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Analysis failed");
+      setAnalysisResult(data);
+    } catch (err) {
+      setAnalyzeError(err.message);
+    } finally {
+      setAnalysisBusy(false);
+    }
+  }
+
+  async function playFromHere() {
+    setAnalysisBusy(true);
+    setAnalyzeError("");
+    const { black, white } = cellsToBitboards(editorCells);
+    try {
+      const res = await fetch("/api/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ black, white, currentPlayer: editorPlayer, humanPlayer, depth }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start game");
+      setAppMode("play");
+      await showResponseFrames(data, { replace: true });
+    } catch (err) {
+      setAnalyzeError(err.message);
+    } finally {
+      setAnalysisBusy(false);
+    }
+  }
+
   const status = game
     ? isViewingPast
       ? `Viewing move ${cursor + 1} of ${history.length}`
@@ -153,12 +253,14 @@ function App() {
             : "AI to move"
     : "Loading";
 
+  const isThinking = busy || analysisBusy;
+
   return h(
     React.Fragment,
     null,
     h(
       "main",
-      { className: `shell ${busy ? "is-thinking" : ""} ${newGamePulse ? "new-game-pulse" : ""}` },
+      { className: `shell ${appMode === "analyze" ? "is-analyze-mode" : "is-play-mode"} ${isThinking ? "is-thinking" : ""} ${newGamePulse ? "new-game-pulse" : ""}` },
       h("div", { className: "ambient ambient-one" }),
       h("div", { className: "ambient ambient-two" }),
       h("div", { className: "ambient ambient-three" }),
@@ -172,31 +274,67 @@ function App() {
             "div",
             { className: "brand-block" },
             h("h1", null, h("span", null, "Reversi"), " Engine"),
-            h("p", null, status)
+            h("p", null, appMode === "play" ? status : "Position editor")
           ),
-          h(
-            "div",
-            { className: "controls" },
-            h(SidePicker, { humanPlayer, busy, onPick: chooseSide }),
-            h(DepthPicker, {
-              depth,
-              busy,
-              open: depthOpen,
-              setOpen: setDepthOpen,
-              onPick: (value) => setDepth(value),
-            }),
+          appMode === "play" &&
             h(
-              "button",
-              { type: "button", className: "new-game-button", disabled: busy, onClick: () => newGame(depth, humanPlayer) },
-              h("span", null, "New game")
+              "div",
+              { className: "controls" },
+              h(SidePicker, { humanPlayer, busy, onPick: chooseSide }),
+              h(DepthPicker, {
+                depth,
+                busy,
+                open: depthOpen,
+                setOpen: setDepthOpen,
+                onPick: (value) => setDepth(value),
+              }),
+              h(
+                "button",
+                { type: "button", className: "new-game-button", disabled: busy, onClick: () => newGame(depth, humanPlayer) },
+                h("span", null, "New game")
+              )
             )
-          )
         ),
-        h(BoardView, { game, legalSet, canPlay, onMove: playMove }),
-        h(HistoryNav, { canGoBack, canGoForward, cursor, total: history.length, setCursor }),
-        busy && h(ThinkingDock, null)
+        appMode === "play"
+          ? h(
+              React.Fragment,
+              null,
+              h(BoardView, { game, legalSet, canPlay, onMove: playMove }),
+              h(HistoryNav, { canGoBack, canGoForward, cursor, total: history.length, setCursor }),
+              busy && h(ThinkingDock, null)
+            )
+          : h(AnalyzeBoardView, {
+              cells: editorCells,
+              editorTool,
+              analysisResult,
+              evalScore: analysisResult?.eval ?? 0,
+              onCellClick: handleEditorCellClick,
+            })
       ),
-      h(Sidebar, { game, liveGame, busy, error, isViewingPast, humanPlayer })
+      appMode === "play"
+        ? h(Sidebar, { game, liveGame, busy, error, isViewingPast, humanPlayer, appMode, onModeChange: setAppMode })
+        : h(AnalyzeSidebar, {
+            analysisResult,
+            editorCells,
+            analysisBusy,
+            analyzeError,
+            editorTool,
+            onTool: (t) => setEditorTool(t),
+            editorPlayer,
+            onEditorPlayer: changeEditorPlayer,
+            humanPlayer,
+            onHumanPlayer: setHumanPlayer,
+            depth,
+            onDepth: setDepth,
+            depthOpen,
+            setDepthOpen,
+            onRunAnalysis: runAnalysis,
+            onPlayFromHere: playFromHere,
+            onClear: clearBoard,
+            onReset: resetToStart,
+            appMode,
+            onModeChange: setAppMode,
+          })
     ),
     h(BottomLinks, null)
   );
@@ -395,7 +533,7 @@ function ThinkingDock() {
   );
 }
 
-function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer }) {
+function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer, appMode, onModeChange }) {
   const source = game ?? liveGame;
   const black = source?.score?.black ?? 2;
   const white = source?.score?.white ?? 2;
@@ -406,6 +544,7 @@ function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer }) {
     "aside",
     { className: "sidebar" },
     h("div", { className: "sidebar-glow" }),
+    h(ModeToggle, { mode: appMode, onChange: onModeChange }),
     h("h2", null, "Game"),
     h("p", { className: "side-note" }, `You are ${humanPlayer}${isViewingPast ? " - review mode" : ""}`),
     h(
@@ -440,6 +579,407 @@ function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer }) {
     )
   );
 }
+
+// ── Analyze mode components ──────────────────────────────────────────────────
+
+function ModeToggle({ mode, onChange }) {
+  return h(
+    "div",
+    { className: "mode-toggle", "aria-label": "Select mode" },
+    ["play", "analyze"].map((m) =>
+      h(
+        "button",
+        {
+          key: m,
+          type: "button",
+          className: m === mode ? "active" : "",
+          onClick: () => onChange(m),
+        },
+        m === "play" ? "Play" : "Analyze"
+      )
+    )
+  );
+}
+
+function EditorToolbar({ editorTool, onTool, editorPlayer, onEditorPlayer }) {
+  return h(
+    "div",
+    { className: "editor-toolbar" },
+    h(
+      "div",
+      { className: "editor-tool-section" },
+      h("span", { className: "control-label" }, "Place"),
+      h(
+        "div",
+        { className: "editor-tool-group" },
+        [
+          { id: "black", label: "Black" },
+          { id: "white", label: "White" },
+          { id: "erase", label: "Erase" },
+        ].map(({ id, label }) =>
+          h(
+            "button",
+            {
+              key: id,
+              type: "button",
+              className: `editor-tool-btn ${editorTool === id ? "active" : ""}`,
+              onClick: () => onTool(id),
+              title: label,
+            },
+            id !== "erase"
+              ? h("span", { className: `mini-disc ${id}` })
+              : h("span", { className: "erase-x", "aria-hidden": "true" }),
+            h("span", null, label)
+          )
+        )
+      )
+    ),
+    h(
+      "div",
+      { className: "editor-tool-section" },
+      h("span", { className: "control-label" }, "To play"),
+      h(
+        "div",
+        { className: "editor-tool-group turn-group" },
+        SIDES.map((side) =>
+          h(
+            "button",
+            {
+              key: side,
+              type: "button",
+              className: `editor-tool-btn ${editorPlayer === side ? "active" : ""}`,
+              onClick: () => onEditorPlayer(side),
+            },
+            h("span", { className: `mini-disc ${side.toLowerCase()}` }),
+            side
+          )
+        )
+      )
+    )
+  );
+}
+
+function AnalyzeBoardView({ cells, editorTool, analysisResult, evalScore, onCellClick }) {
+  const bestMove = analysisResult?.aiMove ?? null;
+  const legalSet = new Set(analysisResult?.legalMoves ?? []);
+
+  return h(
+    "div",
+    { className: "board-outer" },
+    h(EvalBar, { evalScore }),
+    h(
+      "div",
+      { className: "board-wrap" },
+      h(
+        "div",
+        { className: "files files-top" },
+        FILES.map((file) => h("span", { key: file }, file))
+      ),
+      h(
+        "div",
+        { className: "board-row-layout" },
+        h(
+          "div",
+          { className: "ranks" },
+          Array.from({ length: 8 }, (_, i) => h("span", { key: i }, i + 1))
+        ),
+        h(
+          "div",
+          { className: "board editor-mode", "aria-label": "Position editor" },
+          cells.map((cell, index) => {
+            const coord = coordFor(index);
+            const isBest = coord === bestMove;
+            const isLegal = legalSet.has(coord) && !isBest;
+            const isPlaceable = editorTool !== "erase" && cell === "empty" && !isBest;
+            const className = [
+              "square",
+              "editor-sq",
+              isBest ? "editor-best-move" : "",
+              isLegal ? "editor-legal" : "",
+              isPlaceable ? "editor-placeable" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+
+            return h(
+              "button",
+              {
+                key: coord,
+                type: "button",
+                className,
+                onClick: () => onCellClick(index),
+                title: `${coord}${isBest ? " — AI best move" : ""}`,
+              },
+              cell !== "empty" && h("span", { className: `disc ${cell}` }),
+              isBest && h("span", { className: "best-move-ring" }),
+              isLegal && h("span", { className: "legal-orbit editor-legal-orbit" })
+            );
+          })
+        ),
+        h(
+          "div",
+          { className: "ranks" },
+          Array.from({ length: 8 }, (_, i) => h("span", { key: i }, i + 1))
+        )
+      ),
+      h(
+        "div",
+        { className: "files files-bottom" },
+        FILES.map((file) => h("span", { key: file }, file))
+      )
+    )
+  );
+}
+
+function AnalysisActions({ analysisBusy, analyzeError, onRunAnalysis, onPlayFromHere, onClear, onReset }) {
+  return h(
+    "div",
+    { className: "analysis-actions" },
+    h(
+      "div",
+      { className: "analysis-primary" },
+      h(
+        "button",
+        {
+          type: "button",
+          className: "run-analysis-btn",
+          disabled: analysisBusy,
+          onClick: onRunAnalysis,
+        },
+        analysisBusy
+          ? h(React.Fragment, null, h("span", { className: "btn-spinner" }), "Analyzing…")
+          : "Run Analysis"
+      ),
+      h(
+        "button",
+        {
+          type: "button",
+          className: "play-from-here-btn",
+          disabled: analysisBusy,
+          onClick: onPlayFromHere,
+        },
+        "▶ Play from here"
+      )
+    ),
+    h(
+      "div",
+      { className: "analysis-secondary" },
+      h(
+        "button",
+        { type: "button", className: "editor-util-btn", disabled: analysisBusy, onClick: onClear },
+        "Clear board"
+      ),
+      h(
+        "button",
+        { type: "button", className: "editor-util-btn", disabled: analysisBusy, onClick: onReset },
+        "Reset to start"
+      )
+    ),
+    analyzeError && h("p", { className: "error" }, analyzeError)
+  );
+}
+
+function AnalyzeSidebar({
+  analysisResult, editorCells, analysisBusy, analyzeError,
+  editorTool, onTool, editorPlayer, onEditorPlayer,
+  humanPlayer, onHumanPlayer, depth, onDepth, depthOpen, setDepthOpen,
+  onRunAnalysis, onPlayFromHere, onClear, onReset,
+  appMode, onModeChange,
+}) {
+  const discCount = (color) => editorCells.filter((c) => c === color).length;
+  const black = analysisResult?.score?.black ?? discCount("black");
+  const white = analysisResult?.score?.white ?? discCount("white");
+  const hasResult = !!analysisResult;
+
+  const evalScore = analysisResult?.eval;
+  const evalLabel =
+    evalScore === undefined ? null
+    : Math.abs(evalScore) < 0.05 ? "Equal"
+    : evalScore < 0 ? `Black +${Math.abs(evalScore).toFixed(1)}`
+    : `White +${evalScore.toFixed(1)}`;
+
+  const legalMoves = analysisResult?.legalMoves ?? [];
+  const bestMove = analysisResult?.aiMove ?? null;
+
+  return h(
+    "aside",
+    { className: "sidebar sidebar--analyze" },
+    h("div", { className: "sidebar-glow" }),
+    h(ModeToggle, { mode: appMode, onChange: onModeChange }),
+    h("h2", null, "Analysis"),
+
+    // Disc counts
+    h(
+      "div",
+      { className: "score" },
+      h("div", null, h("span", { className: "score-disc black" }), h("strong", null, black), h("small", null, "Black")),
+      h("div", null, h("span", { className: "score-disc white" }), h("strong", null, white), h("small", null, "White"))
+    ),
+
+    // Place tool
+    h(
+      "div",
+      { className: "analyze-control-group" },
+      h("span", { className: "control-label" }, "Place disc"),
+      h(
+        "div",
+        { className: "editor-tool-group" },
+        [
+          { id: "black", label: "Black" },
+          { id: "white", label: "White" },
+          { id: "erase", label: "Erase" },
+        ].map(({ id, label }) =>
+          h(
+            "button",
+            {
+              key: id,
+              type: "button",
+              className: `editor-tool-btn ${editorTool === id ? "active" : ""}`,
+              disabled: analysisBusy,
+              onClick: () => onTool(id),
+            },
+            id !== "erase" ? h("span", { className: `mini-disc ${id}` }) : h("span", { className: "erase-x" }),
+            h("span", null, label)
+          )
+        )
+      )
+    ),
+
+    // Turn + play-as row
+    h(
+      "div",
+      { className: "analyze-row" },
+      h(
+        "div",
+        { className: "analyze-control-group" },
+        h("span", { className: "control-label" }, "To play"),
+        h(
+          "div",
+          { className: "editor-tool-group turn-group" },
+          SIDES.map((side) =>
+            h(
+              "button",
+              {
+                key: side,
+                type: "button",
+                className: `editor-tool-btn ${editorPlayer === side ? "active" : ""}`,
+                disabled: analysisBusy,
+                onClick: () => onEditorPlayer(side),
+              },
+              h("span", { className: `mini-disc ${side.toLowerCase()}` }),
+              side
+            )
+          )
+        )
+      ),
+      h(
+        "div",
+        { className: "analyze-control-group" },
+        h("span", { className: "control-label" }, "You play"),
+        h(
+          "div",
+          { className: "editor-tool-group turn-group" },
+          SIDES.map((side) =>
+            h(
+              "button",
+              {
+                key: side,
+                type: "button",
+                className: `editor-tool-btn ${humanPlayer === side ? "active" : ""}`,
+                disabled: analysisBusy,
+                onClick: () => onHumanPlayer(side),
+              },
+              h("span", { className: `mini-disc ${side.toLowerCase()}` }),
+              side
+            )
+          )
+        )
+      )
+    ),
+
+    // Depth
+    h(DepthPicker, { depth, busy: analysisBusy, open: depthOpen, setOpen: setDepthOpen, onPick: onDepth }),
+
+    // Primary actions
+    h(
+      "div",
+      { className: "analysis-primary" },
+      h(
+        "button",
+        { type: "button", className: "run-analysis-btn", disabled: analysisBusy, onClick: onRunAnalysis },
+        analysisBusy
+          ? h(React.Fragment, null, h("span", { className: "btn-spinner" }), "Analyzing…")
+          : "Run Analysis"
+      ),
+      h(
+        "button",
+        { type: "button", className: "play-from-here-btn", disabled: analysisBusy, onClick: onPlayFromHere },
+        "▶ Play from here"
+      )
+    ),
+
+    // Utility actions
+    h(
+      "div",
+      { className: "analysis-secondary" },
+      h("button", { type: "button", className: "editor-util-btn", disabled: analysisBusy, onClick: onClear }, "Clear board"),
+      h("button", { type: "button", className: "editor-util-btn", disabled: analysisBusy, onClick: onReset }, "Reset to start")
+    ),
+
+    analyzeError && h("p", { className: "error" }, analyzeError),
+
+    // Analysis results
+    hasResult &&
+      h(
+        React.Fragment,
+        null,
+        h("div", { className: "analyze-divider" }),
+        h(
+          "div",
+          { className: "analyze-result-row" },
+          h("span", { className: "control-label" }, "Evaluation"),
+          h("span", { className: "analysis-eval-text" }, evalLabel)
+        ),
+        h(
+          "div",
+          { className: "analyze-result-row" },
+          h("span", { className: "control-label" }, "AI suggests"),
+          h(
+            "div",
+            { className: "analysis-best-move" },
+            analysisResult.gameOver
+              ? h("span", { className: "analysis-hint" }, "Game over")
+              : bestMove
+                ? h("span", { className: "best-move-badge" }, bestMove)
+                : h("span", { className: "analysis-hint" }, "Pass")
+          )
+        ),
+        h("h3", null, "Legal moves"),
+        h(
+          "div",
+          { className: "moves" },
+          legalMoves.length
+            ? legalMoves.map((m) =>
+                h("span", { key: m, className: m === bestMove ? "move-best" : "" }, m)
+              )
+            : h("span", null, analysisResult.gameOver ? "none" : "pass")
+        )
+      ),
+
+    analysisBusy &&
+      h(
+        "div",
+        { className: "engine-loader" },
+        h("div", { className: "loader-grid" }, Array.from({ length: 16 }, (_, i) => h("span", { key: i }))),
+        h("p", { className: "thinking" }, "Engine is searching")
+      ),
+
+    !hasResult && !analysisBusy &&
+      h("p", { className: "analyze-tip-inline" }, "Run analysis to see the engine evaluation and best move.")
+  );
+}
+
+// ── End analyze mode components ───────────────────────────────────────────────
 
 function BottomLinks() {
   return h(
