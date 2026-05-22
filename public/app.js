@@ -662,6 +662,61 @@ function EditorToolbar({ editorTool, onTool, editorPlayer, onEditorPlayer }) {
 function AnalyzeBoardView({ cells, editorTool, analysisResult, evalScore, onCellClick }) {
   const bestMove = analysisResult?.aiMove ?? null;
   const legalSet = new Set(analysisResult?.legalMoves ?? []);
+  const boardRef = React.useRef(null);
+  const isDragging = React.useRef(false);
+  const lastPainted = React.useRef(-1);
+
+  // 20% of cell size is the corner dead zone — wide enough for clean diagonal
+  // slides but narrow enough that straight adjacent moves register easily.
+  const CORNER_GAP = 0.20;
+
+  function getCellIndex(e) {
+    const board = boardRef.current;
+    if (!board) return -1;
+    const rect = board.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const cellW = rect.width / 8;
+    const cellH = rect.height / 8;
+    const col = Math.floor(relX / cellW);
+    const row = Math.floor(relY / cellH);
+    if (col < 0 || col > 7 || row < 0 || row > 7) return -1;
+    const localX = relX - col * cellW;
+    const localY = relY - row * cellH;
+    const gapX = cellW * CORNER_GAP;
+    const gapY = cellH * CORNER_GAP;
+    // Dead zone only when BOTH axes are in the corner margin simultaneously
+    const inCorner =
+      (localX < gapX || localX > cellW - gapX) &&
+      (localY < gapY || localY > cellH - gapY);
+    if (inCorner) return -1;
+    return row * 8 + col;
+  }
+
+  function handleMouseDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    isDragging.current = true;
+    lastPainted.current = -1;
+    const idx = getCellIndex(e);
+    if (idx >= 0) {
+      onCellClick(idx);
+      lastPainted.current = idx;
+    }
+  }
+
+  function handleMouseMove(e) {
+    if (!isDragging.current) return;
+    const idx = getCellIndex(e);
+    if (idx >= 0 && idx !== lastPainted.current) {
+      onCellClick(idx);
+      lastPainted.current = idx;
+    }
+  }
+
+  function handleMouseUp() {
+    isDragging.current = false;
+  }
 
   return h(
     "div",
@@ -685,7 +740,15 @@ function AnalyzeBoardView({ cells, editorTool, analysisResult, evalScore, onCell
         ),
         h(
           "div",
-          { className: "board editor-mode", "aria-label": "Position editor" },
+          {
+            ref: boardRef,
+            className: "board editor-mode",
+            "aria-label": "Position editor",
+            onMouseDown: handleMouseDown,
+            onMouseMove: handleMouseMove,
+            onMouseUp: handleMouseUp,
+            onMouseLeave: handleMouseUp,
+          },
           cells.map((cell, index) => {
             const coord = coordFor(index);
             const isBest = coord === bestMove;
@@ -707,8 +770,9 @@ function AnalyzeBoardView({ cells, editorTool, analysisResult, evalScore, onCell
                 key: coord,
                 type: "button",
                 className,
-                onClick: () => onCellClick(index),
+                draggable: false,
                 title: `${coord}${isBest ? " — AI best move" : ""}`,
+                style: { pointerEvents: "none" },
               },
               cell !== "empty" && h("span", { className: `disc ${cell}` }),
               isBest && h("span", { className: "best-move-ring" }),

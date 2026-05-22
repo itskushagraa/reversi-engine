@@ -1306,11 +1306,12 @@ button:disabled {
 
 /* Editor board overrides */
 .board.editor-mode {
-  cursor: default;
+  cursor: crosshair;
+  user-select: none;
 }
 
 .square.editor-sq {
-  cursor: crosshair;
+  cursor: inherit;
 }
 
 .square.editor-sq:hover {
