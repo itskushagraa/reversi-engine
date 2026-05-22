@@ -169,6 +169,15 @@ function App() {
     newGame(depth, side);
   }
 
+  function analyzeFromHere() {
+    const cells = game?.cells ?? liveGame?.cells;
+    if (!cells) return;
+    setEditorCells([...cells]);
+    setAnalysisResult(null);
+    setAnalyzeError("");
+    setAppMode("analyze");
+  }
+
   // ── Analyze mode handlers ─────────────────────────────────────────────────
 
   function handleEditorCellClick(index) {
@@ -312,7 +321,7 @@ function App() {
             })
       ),
       appMode === "play"
-        ? h(Sidebar, { game, liveGame, busy, error, isViewingPast, humanPlayer, appMode, onModeChange: setAppMode })
+        ? h(Sidebar, { game, liveGame, busy, error, isViewingPast, humanPlayer, appMode, onModeChange: setAppMode, onAnalyzeFromHere: analyzeFromHere })
         : h(AnalyzeSidebar, {
             analysisResult,
             editorCells,
@@ -533,7 +542,7 @@ function ThinkingDock() {
   );
 }
 
-function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer, appMode, onModeChange }) {
+function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer, appMode, onModeChange, onAnalyzeFromHere }) {
   const source = game ?? liveGame;
   const black = source?.score?.black ?? 2;
   const white = source?.score?.white ?? 2;
@@ -552,6 +561,11 @@ function Sidebar({ game, liveGame, busy, error, isViewingPast, humanPlayer, appM
       { className: "score" },
       h("div", null, h("span", { className: "score-disc black" }), h("strong", null, black), h("small", null, "Black")),
       h("div", null, h("span", { className: "score-disc white" }), h("strong", null, white), h("small", null, "White"))
+    ),
+    h(
+      "button",
+      { type: "button", className: "analyze-from-here-btn", onClick: onAnalyzeFromHere },
+      "Analyze from here"
     ),
     h("h3", null, "Legal moves"),
     h(
